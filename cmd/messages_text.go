@@ -155,6 +155,12 @@ func (mt *MessagesText) createBody(w io.Writer, m discord.Message, isReply bool)
 	ast := discordmd.ParseWithMessage(src, *discordState.Cabinet, &m, false)
 	markdown.DefaultRenderer.Render(w, src, ast)
 
+	// Display embeds and images if supported
+	if mt.cfg.EnableImageDisplay && mt.isKittyProtocolSupported() {
+		mt.renderAttachmentImages(w, m)
+		mt.renderEmbedImages(w, m)
+	}
+
 	if isReply {
 		fmt.Fprint(w, "[::-]")
 	}

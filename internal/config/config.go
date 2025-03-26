@@ -35,6 +35,8 @@ type (
 		Identify Identify `toml:"identify"`
 		Keys     Keys     `toml:"keys"`
 		Theme    Theme    `toml:"theme"`
+
+		EnableImageDisplay bool `toml:"enable_image_display"`
 	}
 )
 
@@ -59,6 +61,8 @@ func defaultConfig() *Config {
 
 		Keys:  defaultKeys(),
 		Theme: defaultTheme(),
+
+		EnableImageDisplay: false,
 	}
 }
 
