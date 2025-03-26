@@ -73,11 +73,7 @@ func (mt *MessagesText) displayImage(w io.Writer, url string, width, height int)
 
 	scaledWidth, scaledHeight := calculateImageDimensions(width, height, maxWidth, maxHeight)
 
-	imgID := generateImageID(url)
-
-	fmt.Fprint(w, "\n")
 	mt.writeChunkedImage(w, img, imgID, scaledWidth, scaledHeight)
-	fmt.Fprint(w, "\n")
 }
 
 func calculateImageDimensions(width, height, maxWidth, maxHeight int) (int, int) {
@@ -104,38 +100,56 @@ func generateImageID(url string) string {
 	return fmt.Sprintf("img_%x", hash)
 }
 
-func (mt *MessagesText) createKittyGraphicsCommand(payload []byte, id string, width, height int, more bool) string {
-	cmd := fmt.Sprintf("a=T,f=100,s=%d,v=%d,i=%s", width, height, id)
-	if more {
-		cmd += ",m=1"
-	}
-	return fmt.Sprintf("\033_G%s;%s\033\\", cmd, payload)
-}
-
 func (mt *MessagesText) writeChunkedImage(w io.Writer, imgData []byte, id string, width, height int) {
 	encoded := base64.StdEncoding.EncodeToString(imgData)
+	os.WriteFile(id+".log", []byte(encoded), 0644)
 
 	chunkSize := 4096
-	for len(encoded) > 0 {
-		var chunk string
-		if len(encoded) > chunkSize {
-			chunk = encoded[:chunkSize]
-			encoded = encoded[chunkSize:]
-			_, err := fmt.Fprint(w, mt.createKittyGraphicsCommand([]byte(chunk), id, width, height, true))
+	pos := 0
+
+	for pos < len(encoded) {
+		_, err := mt.createBody(w, "\033_G", false, true)
+		if err != nil {
+			slog.Error("failed to write image start sequence", "err", err)
+			return
+		}
+
+		if pos == 0 {
+			_, err = fmt.Fprintf(w, "a=T,f=100,w=%d,h=%d,", width, height)
 			if err != nil {
-				slog.Error("failed to write image chunk", "err", err)
-			}
-		} else {
-			chunk = encoded
-			encoded = ""
-			_, err := fmt.Fprint(w, mt.createKittyGraphicsCommand([]byte(chunk), id, width, height, false))
-			if err != nil {
-				slog.Error("failed to write image chunk", "err", err)
+				slog.Error("failed to write image parameters", "err", err)
+				return
 			}
 		}
 
-		if f, ok := w.(interface{ Flush() error }); ok {
-			f.Flush()
+		var chunk string
+		if pos+chunkSize < len(encoded) {
+			chunk = encoded[pos : pos+chunkSize]
+			pos += chunkSize
+			_, err = fmt.Fprint(w, "m=1")
+		} else {
+			chunk = encoded[pos:]
+			pos = len(encoded)
 		}
+
+		if err != nil {
+			slog.Error("failed to write more flag", "err", err)
+			return
+		}
+
+		if len(chunk) > 0 {
+			_, err = fmt.Fprintf(w, ";%s", chunk)
+			if err != nil {
+				slog.Error("failed to write image chunk", "err", err)
+				return
+			}
+		}
+
+		_, err = fmt.Fprint(w, "\033\\")
+		if err != nil {
+			slog.Error("failed to write image end sequence", "err", err)
+			return
+		}
+
 	}
 }
