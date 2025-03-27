@@ -12,8 +12,11 @@ import (
 	"github.com/diamondburned/arikawa/v3/api"
 	"github.com/diamondburned/arikawa/v3/discord"
 	"github.com/diamondburned/arikawa/v3/utils/json/option"
+	"github.com/diamondburned/ningen/v3/discordmd"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/parser"
 )
 
 const tmpFilePattern = consts.Name + "_*.md"
@@ -86,6 +89,8 @@ func (mi *MessageInput) send() {
 		return
 	}
 
+	text = parseMentions(text)
+
 	data := api.SendMessageData{
 		Content: text,
 	}
@@ -147,4 +152,32 @@ func (mi *MessageInput) editor() {
 	}
 
 	mi.SetText(strings.TrimSpace(string(msg)), true)
+}
+
+func (mi *MessageInput) parseMentions(text string) string {
+	words := strings.Fields(text)
+	channel, err := discordState.Channel(app.guildsTree.selectedChannelID)
+	if err != nil {
+		slog.Error("failed to get channel", "channel_id", app.guildsTree.selectedChannelID, "err", err)
+		return "failed 1"
+	}
+
+	members := channel.DMRecipients
+	src := []byte(text)
+	node := parser.NewParser(
+		parser.WithBlockParsers(discordmd.BlockParsers()...),
+		parser.WithInlineParsers(discordmd.InlineParserWithLink()...),
+	).Parse(text.NewReader(src))
+
+	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if entering {
+			switch n := n.(type) {
+			case *discordmd.Mention:
+				words[i] = n.Mention()
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+
+	return strings.Join(words, " ")
 }
